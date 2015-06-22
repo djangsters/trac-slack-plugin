@@ -1,11 +1,8 @@
 import json
 import requests
-import re
 from trac.core import Component, implements
 from trac.config import Option
 from trac.ticket.api import ITicketChangeListener
-#from trac.versioncontrol.api import IRepositoryChangeListener
-#from trac.wiki.api import IWikiChangeListener
 
 
 def prepare_ticket_values(ticket, action=None):
@@ -23,20 +20,16 @@ class SlackNotifcationPlugin(Component):
     implements(ITicketChangeListener)
     webhook = Option('slack', 'webhook', 'https://hooks.slack.com/services/',
                      doc="Incoming webhook for slack")
-    channel = Option('slack', 'channel', '#Trac',
+    channel = Option('slack', 'channel', '',
                      doc="Channel name on slack")
-    username = Option('slack', 'username', 'Trac-Bot',
-                      doc="Username of th bot on slack notify")
+    username = Option('slack', 'username', '',
+                      doc="Username of the bot on slack notify")
     fields = Option('slack', 'fields', 'type,component,resolution',
-                    doc="Username of th bot on slack notify")
+                    doc="Fields that should be reported")
 
     def notify(self, type, values):
-        # values['type'] = type
-        values['author'] = re.sub(r' <.*', '', values['author'])
-        #template = '%(project)s/%(branch)s %(rev)s %(author)s: %(logmsg)s'
-        #template = '%(project)s %(rev)s %(author)s: %(logmsg)s'
-        template = '_%(project)s_ :incoming_envelope: \n'\
-            '%(type)s <%(url)s|%(id)s>: %(summary)s [*%(action)s* by @%(author)s]'
+        # values['author'] = re.sub(r' <.*', '', values['author'])
+        template = '%(type)s <%(url)s|%(id)s>: %(summary)s [%(action)s by *%(author)s*]'
 
         if values['action'] == 'closed':
             template += ' :white_check_mark:'
@@ -44,24 +37,38 @@ class SlackNotifcationPlugin(Component):
         if values['action'] == 'created':
             template += ' :pushpin:'
 
-        if values['description']:
-            template += ' \nDescription: ```%(description)s```'
-
         if values['attrib']:
             template += '\n```%(attrib)s```'
 
         if values.get('changes', False):
-            template += '\n:small_red_triangle: Changes: ```%(changes)s```'
+            template += '\n```%(changes)s```'
+
+        if values['description']:
+            template += ' \n```%(description)s```'
 
         if values['comment']:
             template += '\n>>>%(comment)s'
 
         message = template % values
-        #message = ' '.join(['%s=%s' % (key, value) for (key, value) in values.items()])
-        data = {"channel": self.channel,
-                "username": self.username,
-                "text": message.encode('utf-8').strip()
-                }
+        # message += "\n\n"
+        # message += '\n'.join(['%s:%s' % (key, value) for (key, value) in values.items()])
+
+        channel = self.channel
+        if ":" in channel:
+            channels = channel.split(",")
+            channel = ''
+            for entry in channels:
+                client, chan = entry.split(":", 1)
+                if values.get('client').lower() == client.strip().lower():
+                    channel = chan.strip()
+                    break
+
+        data = {"text": message.encode('utf-8').strip()}
+        if channel:
+            data["channel"] = channel
+        if self.username:
+            data["username"] = self.username
+
         try:
             requests.post(self.webhook, data={"payload": json.dumps(data)})
         except requests.exceptions.RequestException:
@@ -101,25 +108,15 @@ class SlackNotifcationPlugin(Component):
 
         fields = self.fields.split(',')
         changes = []
-        attrib = []
 
         for field in fields:
-            if ticket[field] != '':
-                attrib.append('  * %s: %s' % (field, ticket[field]))
-
             if field in old_values.keys():
                 changes.append('  * %s: %s => %s' %
                                (field, old_values[field], ticket[field]))
 
-        values['attrib'] = "\n".join(attrib) or ''
-        values['changes'] = "\n".join(changes) or ''
+        values['changes'] = "\n".join(changes)
 
         self.notify('ticket', values)
 
     def ticket_deleted(self, ticket):
         pass
-
-    # def wiki_page_added(self, page):
-    # def wiki_page_changed(self, page, version, t, comment, author, ipnr):
-    # def wiki_page_deleted(self, page):
-    # def wiki_page_version_deleted(self, page):
