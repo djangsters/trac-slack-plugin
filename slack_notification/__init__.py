@@ -1,3 +1,5 @@
+# -*- coding: utf8 -*-
+
 import json
 import requests
 from trac.core import Component, implements
@@ -5,14 +7,11 @@ from trac.config import Option
 from trac.ticket.api import ITicketChangeListener
 
 
-def prepare_ticket_values(ticket, action=None):
+def prepare_ticket_values(ticket):
     values = ticket.values.copy()
     values['id'] = "#" + str(ticket.id)
-    values['action'] = action
     values['url'] = ticket.env.abs_href.ticket(ticket.id)
     values['project'] = ticket.env.project_name.encode('utf-8').strip()
-    values['attrib'] = ''
-    values['changes'] = ''
     return values
 
 
@@ -27,29 +26,59 @@ class SlackNotifcationPlugin(Component):
     fields = Option('slack', 'fields', 'type,component,resolution',
                     doc="Fields that should be reported")
 
-    def notify(self, type, values):
+    def notify(self, action, values):
         # values['author'] = re.sub(r' <.*', '', values['author'])
-        template = '%(type)s <%(url)s|%(id)s>: %(summary)s [%(action)s by *%(author)s*]'
+        values["author"] = values["author"].title()
+        values["type"] = values["type"].title()
 
-        if values['action'] == 'closed':
-            template += ' :white_check_mark:'
+        text = ""
+        add_author = ('comment' not in values)
+        if action == "new":
+            text = "New "
+            add_author = True
 
-        if values['action'] == 'created':
-            template += ' :pushpin:'
+        text += u"{type} <{url}|{id}>: {summary}".format(**values)
 
-        if values['attrib']:
-            template += '\n```%(attrib)s```'
+        if "new_status" in values:
+            text += u" *⇒ {}*".format(values["new_status"])
+            add_author = True
 
-        if values.get('changes', False):
-            template += '\n```%(changes)s```'
+        if add_author:
+            text += u" _by_ *{}*".format(values['author'])
 
-        if values['description']:
-            template += ' \n```%(description)s```'
+        fields = []
 
-        if values['comment']:
-            template += '\n>>>%(comment)s'
+        for k, v in values.get('attrib', {}).items():
+            fields.append({
+                "title": k.title(),
+                "value": v,
+                "short": True,
+            })
 
-        message = template % values
+        for k, v in values.get('changes', {}).items():
+            fields.append({
+                "title": k.title(),
+                "value": u"{} ⇒ {}".format(v[0], v[1]) if v[0] else v[1],
+                "short": True,
+            })
+
+        if "description" in values:
+            fields.append({
+                "title": "Description",
+                "value": values['description'],
+                "short": False,
+            })
+
+        if "comment" in values:
+            field_title = u"Comment"
+            if not add_author:
+                field_title += u" by {}".format(values["author"])
+            fields.append({
+                "title": field_title,
+                "value": values['comment'],
+                "short": False,
+            })
+
         # message += "\n\n"
         # message += '\n'.join(['%s:%s' % (key, value) for (key, value) in values.items()])
 
@@ -63,7 +92,13 @@ class SlackNotifcationPlugin(Component):
                     channel = chan.strip()
                     break
 
-        data = {"text": message.encode('utf-8').strip()}
+        data = {"attachments": [{
+            "fallback": text.strip(),
+            "pretext": text.strip(),
+            "color": "#EEEEEE",
+            "mrkdwn_in": ["pretext"],
+            "fields": fields
+        }]}
         if channel:
             data["channel"] = channel
         if self.username:
@@ -76,47 +111,41 @@ class SlackNotifcationPlugin(Component):
         return True
 
     def ticket_created(self, ticket):
-        values = prepare_ticket_values(ticket, 'created')
+        values = prepare_ticket_values(ticket)
         values['author'] = values['reporter']
-        values['comment'] = ''
         fields = self.fields.split(',')
-        attrib = []
+        attrib = {}
 
         for field in fields:
             if ticket[field] != '':
-                attrib.append('  * %s: %s' % (field, ticket[field]))
+                attrib[field] = ticket[field]
 
-        values['attrib'] = "\n".join(attrib) or ''
+        values['attrib'] = attrib
 
-        self.notify('ticket', values)
+        self.notify('new', values)
 
     def ticket_changed(self, ticket, comment, author, old_values):
-        action = 'changed'
+        values = prepare_ticket_values(ticket)
+        if comment:
+            values['comment'] = comment
+        values['author'] = author or 'unknown'
         if 'status' in old_values:
-            if 'status' in ticket.values:
-                if ticket.values['status'] != old_values['status']:
-                    action = ticket.values['status']
-        values = prepare_ticket_values(ticket, action)
-        values.update({
-            'comment': comment or '',
-            'author': author or '',
-            'old_values': old_values
-        })
+            if ticket.values.get('status') != old_values['status']:
+                values["new_status"] = ticket.values['status']
 
         if 'description' not in old_values.keys():
-            values['description'] = ''
+            del values['description']
 
         fields = self.fields.split(',')
-        changes = []
+        changes = {}
 
         for field in fields:
             if field in old_values.keys():
-                changes.append('  * %s: %s => %s' %
-                               (field, old_values[field], ticket[field]))
+                changes[field] = (old_values[field], ticket[field])
 
-        values['changes'] = "\n".join(changes)
+        values['changes'] = changes
 
-        self.notify('ticket', values)
+        self.notify('edit', values)
 
     def ticket_deleted(self, ticket):
         pass
