@@ -132,6 +132,9 @@ class SlackNotifcationPlugin(Component):
             return
         values = prepare_ticket_values(ticket)
         if comment:
+            # Ignore timesheet entries
+            if comment == "Timesheet2Track":
+                return
             values['comment'] = comment
         values['author'] = author or 'unknown'
         if 'status' in old_values:
