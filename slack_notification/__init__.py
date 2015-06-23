@@ -82,15 +82,7 @@ class SlackNotifcationPlugin(Component):
         # message += "\n\n"
         # message += '\n'.join(['%s:%s' % (key, value) for (key, value) in values.items()])
 
-        channel = self.channel
-        if ":" in channel:
-            channels = channel.split(",")
-            channel = ''
-            for entry in channels:
-                client, chan = entry.split(":", 1)
-                if values.get('client').lower() == client.strip().lower():
-                    channel = chan.strip()
-                    break
+        channel = self.detect_channel(values) or self.channel
 
         data = {"attachments": [{
             "fallback": text.strip(),
@@ -109,6 +101,15 @@ class SlackNotifcationPlugin(Component):
         except requests.exceptions.RequestException:
             return False
         return True
+
+    def detect_channel(self, values):
+        if values.get('milestone'):
+            return "#" + values['milestone'].lower()
+        if values.get('component') == "support":
+            return "#yourfirm"
+        if values.get('client').lower() == "yourfirm":
+            return "#yourfirm"
+        return None
 
     def ticket_created(self, ticket):
         values = prepare_ticket_values(ticket)
