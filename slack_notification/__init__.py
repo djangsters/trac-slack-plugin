@@ -3,7 +3,7 @@
 import json
 import requests
 from trac.core import Component, implements
-from trac.config import Option
+from trac.config import ListOption, Option
 from trac.ticket.api import ITicketChangeListener
 
 
@@ -25,6 +25,8 @@ class SlackNotifcationPlugin(Component):
                       doc="Username of the bot on slack notify")
     fields = Option('slack', 'fields', 'type,component,resolution',
                     doc="Fields that should be reported")
+    ignore_tickets = ListOption('slack', 'ignore_tickets', '',
+                                doc="Comma separated list of tickets that should be ignored")
 
     def notify(self, action, values):
         # values['author'] = re.sub(r' <.*', '', values['author'])
@@ -126,6 +128,8 @@ class SlackNotifcationPlugin(Component):
         self.notify('new', values)
 
     def ticket_changed(self, ticket, comment, author, old_values):
+        if str(ticket.id) in self.ignore_tickets:
+            return
         values = prepare_ticket_values(ticket)
         if comment:
             values['comment'] = comment
