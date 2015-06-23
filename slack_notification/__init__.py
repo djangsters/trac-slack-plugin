@@ -132,6 +132,9 @@ class SlackNotifcationPlugin(Component):
         if 'status' in old_values:
             if ticket.values.get('status') != old_values['status']:
                 values["new_status"] = ticket.values['status']
+                if "resolution" in old_values:
+                    values["new_status"] += " [{}]".format(ticket["resolution"])
+                    del old_values["resolution"]  # prevent this from appearing in changes
 
         if 'description' not in old_values.keys():
             del values['description']
@@ -140,7 +143,7 @@ class SlackNotifcationPlugin(Component):
         changes = {}
 
         for field in fields:
-            if field in old_values.keys():
+            if field in old_values:
                 changes[field] = (old_values[field], ticket[field])
 
         values['changes'] = changes
