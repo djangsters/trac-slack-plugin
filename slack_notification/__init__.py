@@ -106,7 +106,11 @@ class SlackNotifcationPlugin(Component):
 
     def detect_channel(self, values):
         if values.get('milestone'):
-            return "#" + values['milestone'].lower()
+            if 'yourfirm' in values['milestone'].lower():
+                channel_name = 'yourfirm'
+            else:
+                channel_name = values['milestone'].lower()
+            return "#" + channel_name
         if values.get('component') == "support":
             return "#yourfirm"
         if values.get('client').lower() == "yourfirm":
