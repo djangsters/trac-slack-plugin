@@ -3,6 +3,18 @@
 Plugin to announce Trac changes in [Slack](https://slack.com/) service.
 
 
+## Updating on mustafar
+As `www-trac`, activate the venvt, and then in `~/trac-slack-plugin` run:
+```
+git fetch origin master
+git reset --hard FETCH_HEAD
+rm -r dist
+python setup.py bdist_egg
+cp dist/SlackNotificationPlugin-0.2-py2.7.egg   ../trac/plugins/
+```
+
+Then restart uwsgi by running `sudo service uwsgi restart`
+
 ## Installation
 
 Requirements:
